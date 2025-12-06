@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Logistics Financial Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Top bar (visible when logged in) -->
+    <header class="app-header">
+      <div class="app-header-left">
+        <span class="app-logo">📊</span>
+        <div class="app-title-block">
+          <h1 class="app-title">Logistics Financial Dashboard</h1>
+          <p class="app-subtitle">Road · Port · Rail · Warehousing</p>
+        </div>
+      </div>
+      <div class="app-header-right" id="header-right" style="display:none;">
+        <span id="welcome-label" class="welcome-label"></span>
+        <button id="btn-logout" class="btn btn-outline">Logout</button>
+      </div>
+    </header>
+
+    <!-- Auth section (login/signup) -->
+    <main id="auth-section">
+      <div class="auth-container">
+        <div class="auth-card">
+          <div class="auth-logo">📦</div>
+          <h2 class="auth-title">Welcome to Logistics FinApp</h2>
+          <p class="auth-subtitle">Sign in to track and compare listed logistics players.</p>
+
+          <div class="auth-tabs">
+            <button class="auth-tab auth-tab-active" data-tab="login">Login</button>
+            <button class="auth-tab" data-tab="register">Sign up</button>
+          </div>
+
+          <!-- Login form -->
+          <div id="login-box" class="auth-panel auth-panel-active">
+            <label class="field-label">Username</label>
+            <input id="login-username" class="field-input" placeholder="Enter username" />
+            <label class="field-label">Password</label>
+            <input id="login-password" class="field-input" type="password" placeholder="Enter password" />
+            <button id="btn-login" class="btn btn-primary auth-btn">Login</button>
+            <div class="msg" id="login-msg"></div>
+          </div>
+
+          <!-- Register form -->
+          <div id="register-box" class="auth-panel">
+            <label class="field-label">Username</label>
+            <input id="reg-username" class="field-input" placeholder="Choose a username" />
+            <label class="field-label">Password</label>
+            <input id="reg-password" class="field-input" type="password" placeholder="Choose a password" />
+            <button id="btn-register" class="btn btn-secondary auth-btn">Create account</button>
+            <div class="msg" id="reg-msg"></div>
+          </div>
+        </div>
+        <p class="auth-footer-text">
+          Built for financial analysis of listed logistics, ports and warehousing companies.
+        </p>
+      </div>
+    </main>
+
+    <!-- Main app section (after login) -->
+    <main id="main-section" style="display:none;">
+      <div class="page-container">
+        <!-- Top row: company admin + dashboard -->
+        <section class="layout">
+          <div class="card" id="company-admin">
+            <h2>Manage Companies</h2>
+
+            <div class="card-section">
+              <h3>Add Company</h3>
+              <label class="field-label">Company name</label>
+              <input id="new-name" class="field-input" placeholder="e.g. Container Corp of India" />
+              <label class="field-label">Yahoo ticker</label>
+              <input id="new-ticker" class="field-input" placeholder="e.g. CONCOR.NS" />
+              <label class="field-label">Segment</label>
+              <input id="new-segment" class="field-input" placeholder="e.g. Rail Logistics" />
+              <button id="btn-add-company" class="btn btn-primary">Add company</button>
+              <div class="msg" id="add-msg"></div>
+            </div>
+
+            <div class="card-section">
+              <h3>Existing Companies</h3>
+              <div id="company-list"></div>
+            </div>
+          </div>
+
+          <div class="card" id="dashboard">
+            <div class="card-header">
+              <h2>Dashboard</h2>
+            </div>
+            <div id="dashboard-table"></div>
+          </div>
+        </section>
+
+        <!-- Sector analytics -->
+        <section class="card" id="sector-analytics">
+          <div class="card-header">
+            <h2>Sector Insights</h2>
+            <button id="btn-refresh-sector-analytics" class="btn btn-outline btn-sm">
+              Refresh Insights
+            </button>
+          </div>
+          <div id="sector-analytics-text">
+            Add companies and click "Refresh Insights" to generate sector analytics.
+          </div>
+        </section>
+
+        <!-- Company detail + analytics -->
+        <section class="card" id="company-detail">
+          <h2>Company Detail</h2>
+          <div id="detail-content">Select a company in the dashboard to view detail.</div>
+
+          <div id="company-analytics" class="company-analytics">
+            <h3>Company Insights</h3>
+            <div id="company-analytics-text">
+              Click on a company row to view analysis generated via Gemini.
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+  <script>
+    // Simple tab switching for login / signup
+    const tabs = document.querySelectorAll(".auth-tab");
+    const panels = {
+      login: document.getElementById("login-box"),
+      register: document.getElementById("register-box"),
+    };
+
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => {
+        tabs.forEach((t) => t.classList.remove("auth-tab-active"));
+        tab.classList.add("auth-tab-active");
+
+        const target = tab.dataset.tab;
+        Object.keys(panels).forEach((key) => {
+          if (key === target) {
+            panels[key].classList.add("auth-panel-active");
+          } else {
+            panels[key].classList.remove("auth-panel-active");
+          }
+        });
+      });
+    });
+
+    // Show/hide header right depending on main/auth section
+    const authSection = document.getElementById("auth-section");
+    const mainSection = document.getElementById("main-section");
+    const headerRight = document.getElementById("header-right");
+
+    // app.js already decides which section to show based on token;
+    // we'll just observe display changes to toggle headerRight.
+    const observer = new MutationObserver(() => {
+      if (mainSection.style.display !== "none") {
+        headerRight.style.display = "flex";
+      } else {
+        headerRight.style.display = "none";
+      }
+    });
+
+    observer.observe(mainSection, { attributes: true, attributeFilter: ["style"] });
+  </script>
+</body>
+</html>
