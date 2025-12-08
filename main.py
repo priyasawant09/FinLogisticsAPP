@@ -10,18 +10,55 @@ from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 import google.generativeai as genai
-from config  import API_KEY_GEMINI
+from config import API_KEY_GEMINI
 from dotenv import load_dotenv
 import os
-# Configure Gemini API
+
+from auth import (
+    get_db,
+    get_current_active_user,
+    authenticate_user,
+    create_access_token,
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    get_password_hash,
+    get_user_by_username,
+    get_user_by_email,
+    create_email_verification_token,
+    decode_email_verification_token,
+)
+from email_utils import send_verification_email
+from database import Base, engine
+from finance import (
+    fetch_price_history,
+    fetch_fundamentals,
+    compute_ratios,
+    dataframe_to_statement,
+)
+from models import User, Company
+from schemas import (
+    UserCreate,
+    UserOut,
+    Token,
+    CompanyCreate,
+    CompanyOut,
+    DashboardResponse,
+    CompanyMetrics,
+    CompanyDetailResponse,
+    StatementResponse,
+)
+
+# ================== GEMINI CONFIG ==================
+
 load_dotenv()  # Load environment variables from .env file
 my_key = os.getenv(API_KEY_GEMINI)
-GEMINI_API_KEY = API_KEY_GEMINI
+GEMINI_API_KEY = API_KEY_GEMINI  # Keeping your original logic
+
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
     gemini_model = genai.GenerativeModel("gemini-2.5-flash")
 else:
     gemini_model = None  # we'll handle missing key gracefully
+
 
 def generate_gemini_text(prompt: str, max_words: int) -> str:
     """
@@ -43,33 +80,8 @@ def generate_gemini_text(prompt: str, max_words: int) -> str:
         text = " ".join(words[:max_words])
     return text
 
-from auth import (
-    get_db,
-    get_current_active_user,
-    authenticate_user,
-    create_access_token,
-    ACCESS_TOKEN_EXPIRE_MINUTES,
-    get_password_hash,
-)
-from database import Base, engine
-from finance import (
-    fetch_price_history,
-    fetch_fundamentals,
-    compute_ratios,
-    dataframe_to_statement,
-)
-from models import User, Company
-from schemas import (
-    UserCreate,
-    UserOut,
-    Token,
-    CompanyCreate,
-    CompanyOut,
-    DashboardResponse,
-    CompanyMetrics,
-    CompanyDetailResponse,
-    StatementResponse,
-)
+
+# ================== APP & DB SETUP ==================
 
 Base.metadata.create_all(bind=engine)
 
@@ -88,25 +100,45 @@ def root():
     return FileResponse("static/index.html")
 
 
-# ========= AUTH ROUTES =========
+# ================== AUTH ROUTES ==================
 
 @app.post("/register", response_model=UserOut)
 def register_user(user_in: UserCreate, db: Session = Depends(get_db)):
-    existing = db.query(User).filter(User.username == user_in.username).first()
-    if existing:
+    # Check duplicates
+    if get_user_by_username(db, user_in.username):
         raise HTTPException(status_code=400, detail="Username already registered")
+    if get_user_by_email(db, user_in.email):
+        raise HTTPException(status_code=400, detail="Email already registered")
+
     hashed_pw = get_password_hash(user_in.password)
-    user = User(username=user_in.username, hashed_password=hashed_pw)
+    user = User(
+        username=user_in.username,
+        email=user_in.email,
+        hashed_password=hashed_pw,
+        is_active=True,
+        is_verified=False,
+    )
     db.add(user)
     db.commit()
     db.refresh(user)
+
+    # Create verification token and link
+    token = create_email_verification_token(user.email)
+    # Adjust host/port if deploying elsewhere
+    verify_link = f"http://127.0.0.1:8000/verify-email?token={token}"
+
+    # Send email (log if not configured)
+    send_verification_email(user.email, verify_link)
+
     return user
 
 
 @app.post("/token", response_model=Token)
 def login_for_access_token(
-    form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
 ):
+    # authenticate_user can be updated in auth.py to accept username OR email
     user = authenticate_user(db, form_data.username, form_data.password)
     if not user:
         raise HTTPException(
@@ -114,6 +146,13 @@ def login_for_access_token(
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    if not user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email not verified. Please check your inbox."
+        )
+
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": user.username}, expires_delta=access_token_expires
@@ -121,7 +160,25 @@ def login_for_access_token(
     return Token(access_token=access_token, token_type="bearer")
 
 
-# ========= COMPANY CRUD =========
+@app.get("/verify-email")
+def verify_email(token: str, db: Session = Depends(get_db)):
+    email = decode_email_verification_token(token)
+    if not email:
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+
+    user = get_user_by_email(db, email)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if user.is_verified:
+        return {"message": "Email already verified."}
+
+    user.is_verified = True
+    db.commit()
+    return {"message": "Email verified successfully. You can now log in."}
+
+
+# ================== COMPANY CRUD ==================
 
 @app.get("/companies", response_model=List[CompanyOut])
 def list_companies(
@@ -171,14 +228,19 @@ def delete_company(
     return
 
 
-# ========= DASHBOARD & DETAIL =========
+# ================== DASHBOARD & DETAIL ==================
 
 @app.get("/dashboard", response_model=DashboardResponse)
 def get_dashboard(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    companies = db.query(Company).filter(Company.owner_id == current_user.id).all()
+    companies = (
+        db.query(Company)
+        .filter(Company.owner_id == current_user.id)
+        .order_by(Company.segment, Company.name)
+        .all()
+    )
     if not companies:
         return DashboardResponse(companies=[])
 
@@ -192,6 +254,7 @@ def get_dashboard(
             fundamentals["balance"],
             fundamentals["cashflow"],
             price_hist,
+            info_df=fundamentals["info"],   # make sure finance.compute_ratios accepts info_df
         )
 
         metrics_list.append(
@@ -208,10 +271,15 @@ def get_dashboard(
                 debt_to_equity=ratios["debt_to_equity"],
                 current_ratio=ratios["current_ratio"],
                 one_year_return=ratios["one_year_return"],
+                pe=ratios.get("pe"),                    # NEW
+                pb=ratios.get("pb"),                    # NEW
+                ev_to_ebitda=ratios.get("ev_to_ebitda") # NEW
             )
         )
 
     return DashboardResponse(companies=metrics_list)
+
+
 @app.get("/analytics/sector")
 def sector_analytics(
     db: Session = Depends(get_db),
@@ -222,8 +290,6 @@ def sector_analytics(
     if not companies:
         return {"text": "No companies added yet. Please add logistics companies to view sector analysis."}
 
-    # Build a compact summary of the metrics for Gemini
-    from schemas import CompanyMetrics  # if not already imported
     metrics_list = []
 
     for c in companies:
@@ -234,6 +300,7 @@ def sector_analytics(
             balance=fundamentals["balance"],
             cashflow=fundamentals["cashflow"],
             price_hist=price_hist,
+            info_df=fundamentals["info"],
         )
         metrics_list.append(
             {
@@ -247,6 +314,10 @@ def sector_analytics(
                 "debt_to_equity": ratios.get("debt_to_equity"),
                 "current_ratio": ratios.get("current_ratio"),
                 "one_year_return": ratios.get("one_year_return"),
+                # include market-based multiples in the JSON sent to Gemini
+                "pe": ratios.get("pe"),
+                "pb": ratios.get("pb"),
+                "ev_to_ebitda": ratios.get("ev_to_ebitda"),
             }
         )
 
@@ -255,7 +326,8 @@ def sector_analytics(
         "You are a financial analyst specialising in logistics, ports and warehousing.\n"
         "You are given a portfolio of listed companies with some key metrics.\n"
         "Provide a concise sector-level commentary in at most 150 words.\n"
-        "Highlight broad themes: beta ( calcuate or research), risk adjusted portfolio returns, growth/profitability, leverage, liquidity and recent price momentum.\n"
+        "Highlight broad themes: beta (calculate or research), risk adjusted portfolio returns, "
+        "growth/profitability, leverage, liquidity and recent price momentum.\n"
         "Avoid any investment recommendation language like 'buy/sell/hold'.\n\n"
         f"Metrics JSON:\n{metrics_list}\n\n"
         "Now write the 150-word commentary:"
@@ -263,6 +335,8 @@ def sector_analytics(
 
     text = generate_gemini_text(prompt, max_words=150)
     return {"text": text}
+
+
 @app.get("/analytics/company/{company_id}")
 def company_analytics(
     company_id: int,
@@ -284,11 +358,12 @@ def company_analytics(
         balance=fundamentals["balance"],
         cashflow=fundamentals["cashflow"],
         price_hist=price_hist,
+        info_df=fundamentals["info"],
     )
 
     prompt = (
         "You are a financial analyst specialising in logistics, ports and warehousing.\n"
-        "Provide a focused company-level commentary with brief backgorund on the business it does (max 150 words).\n"
+        "Provide a focused company-level commentary with brief background on the business it does (max 150 words).\n"
         "Comment briefly on size (revenue), profitability, leverage, liquidity and recent price performance.\n"
         "Avoid the words 'buy', 'sell', 'hold', 'recommend', 'target price'.\n\n"
         f"Company name: {c.name}\n"
@@ -300,7 +375,6 @@ def company_analytics(
 
     text = generate_gemini_text(prompt, max_words=100)
     return {"text": text}
-
 
 
 @app.get("/companies/{company_id}/detail", response_model=CompanyDetailResponse)
@@ -323,17 +397,19 @@ def company_detail(
     income_df = fundamentals.get("income")
     balance_df = fundamentals.get("balance")
     cashflow_df = fundamentals.get("cashflow")
+    # IMPORTANT: remove the trailing comma so this is a DataFrame, not a tuple
     info_df = fundamentals.get("info")
 
     # ---------- 3. Price history ----------
     price_hist = fetch_price_history(c.ticker, period="5y")
 
-    # ---------- 4. Compute ratios ----------
+    # ---------- 4. Compute ratios (include info_df for market multiples) ----------
     ratios = compute_ratios(
         income=income_df,
         balance=balance_df,
         cashflow=cashflow_df,
         price_hist=price_hist,
+        info_df=info_df,
     )
 
     # ---------- 5. Build safe info_dict ----------
@@ -392,4 +468,4 @@ def company_detail(
         balance_sheet=to_statement(balance_json),
         cash_flow=to_statement(cf_json),
     )
-
+# ================== END OF FILE ==================

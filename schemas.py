@@ -1,6 +1,6 @@
 # schemas.py
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
 
 # ----- Auth -----
@@ -16,6 +16,7 @@ class TokenData(BaseModel):
 
 class UserBase(BaseModel):
     username: str
+    email: EmailStr
 
 
 class UserCreate(UserBase):
@@ -25,6 +26,7 @@ class UserCreate(UserBase):
 class UserOut(UserBase):
     id: int
     is_active: bool
+    is_verified: bool
 
     class Config:
         orm_mode = True
@@ -64,6 +66,9 @@ class CompanyMetrics(BaseModel):
     debt_to_equity: Optional[float]
     current_ratio: Optional[float]
     one_year_return: Optional[float]
+    pe: Optional[float] = None           # NEW
+    pb: Optional[float] = None           # NEW
+    ev_to_ebitda: Optional[float] = None # NEW
 
 
 class DashboardResponse(BaseModel):

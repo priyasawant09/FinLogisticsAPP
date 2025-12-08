@@ -147,21 +147,27 @@ def compute_ratios(
     balance: pd.DataFrame,
     cashflow: pd.DataFrame,
     price_hist: pd.DataFrame,
+    info_df: Optional[pd.DataFrame] = None,
 ) -> Dict[str, Optional[float]]:
+
     """
     Compute basic financial ratios. Output dict is guaranteed JSON-safe:
       - Only None or normal floats (no NaN/inf, no numpy types).
     """
     metrics: Dict[str, Optional[float]] = {
-        "revenue": None,
-        "net_income": None,
-        "net_margin": None,
-        "roe": None,
-        "debt_to_equity": None,
-        "current_ratio": None,
-        "one_year_return": None,
-        "price": None,
-    }
+    "revenue": None,
+    "net_income": None,
+    "net_margin": None,
+    "roe": None,
+    "debt_to_equity": None,
+    "current_ratio": None,
+    "one_year_return": None,
+    "price": None,
+    "pe": None,           # NEW
+    "pb": None,           # NEW (Market cap / book value)
+    "ev_to_ebitda": None, # NEW
+}
+
 
     # ----- Income statement -----
     revenue = _get_item(income, ["Total Revenue", "TotalRevenue", "Revenue"])
@@ -224,6 +230,61 @@ def compute_ratios(
     # Final safety pass (not strictly needed, but cheap)
     for k, v in list(metrics.items()):
         metrics[k] = _clean_scalar(v)
+    
+        # -------------------------------------------------------
+    # MARKET-BASED MULTIPLES (using info_df)
+    # -------------------------------------------------------
+    if info_df is not None and not info_df.empty:
+
+        def _info_val(key: str) -> Optional[float]:
+            """Safely extract scalar values from info_df"""
+            if key in info_df.index:
+                v = info_df.loc[key, "value"]
+                return _clean_scalar(v)
+            return None
+
+        market_cap = _info_val("marketCap")
+        trailing_pe = _info_val("trailingPE")
+        enterprise_value = _info_val("enterpriseValue")
+        ebitda = _info_val("ebitda")
+
+        total_equity = metrics.get("total_equity")  # set earlier in your function
+        price = metrics.get("price")
+        net_income = metrics.get("net_income")
+
+        # ---------- P/E MULTIPLE ----------
+        if _is_valid_number(trailing_pe):
+            metrics["pe"] = trailing_pe
+
+        elif (
+            _is_valid_number(price)
+            and _is_valid_number(net_income)
+            and _is_valid_number(market_cap)
+            and price != 0
+        ):
+            # Estimate EPS = NI / shares_out
+            shares_out = market_cap / price
+            if shares_out:
+                eps = net_income / shares_out
+                if eps:
+                    metrics["pe"] = _clean_scalar(price / eps)
+
+        # ---------- P/B MULTIPLE ----------
+        if (
+            _is_valid_number(market_cap)
+            and _is_valid_number(total_equity)
+            and total_equity not in (0, None)
+        ):
+            metrics["pb"] = _clean_scalar(market_cap / total_equity)
+
+        # ---------- EV / EBITDA ----------
+        if (
+            _is_valid_number(enterprise_value)
+            and _is_valid_number(ebitda)
+            and ebitda not in (0, None)
+        ):
+            metrics["ev_to_ebitda"] = _clean_scalar(enterprise_value / ebitda)
+
 
     return metrics
 
