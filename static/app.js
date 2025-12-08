@@ -1,8 +1,19 @@
 // static/app.js
 
+const API_BASE = "https://your-render-app.onrender.com";
+function apiUrl(path) {
+  // if absolute URL passed, return as-is
+  if (/^https?:\/\//i.test(path)) return path;
+  // ensure leading slash
+  if (!path.startsWith("/")) path = "/" + path;
+  return API_BASE + path;
+}
+
+
 // ========== AUTH & APP SHELL ==========
 
 // Simple helper: API fetch with auth header and redirect on 401/403
+
 async function apiFetch(url, options = {}) {
   const token = localStorage.getItem("access_token");
 
