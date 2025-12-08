@@ -10,7 +10,8 @@ from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 import google.generativeai as genai
-from config import API_KEY_GEMINI
+from fastapi.middleware.cors import CORSMiddleware
+from config import API_KEY_GEMINI as CONFIG_GEMINI_KEY 
 from dotenv import load_dotenv
 import os
 
@@ -50,8 +51,8 @@ from schemas import (
 # ================== GEMINI CONFIG ==================
 
 load_dotenv()  # Load environment variables from .env file
-my_key = os.getenv(API_KEY_GEMINI)
-GEMINI_API_KEY = API_KEY_GEMINI  # Keeping your original logic
+my_key = os.getenv(CONFIG_GEMINI_KEY)
+GEMINI_API_KEY = CONFIG_GEMINI_KEY  # Keeping your original logic
 
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
@@ -94,6 +95,20 @@ app = FastAPI(
 # Serve static front-end
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://olivedrab-raven-901082.hostingersite.com")
+origins = [
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+    FRONTEND_URL,
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+    allow_credentials=True,
+)
+
 
 @app.get("/", include_in_schema=False)
 def root():
@@ -125,7 +140,7 @@ def register_user(user_in: UserCreate, db: Session = Depends(get_db)):
     # Create verification token and link
     token = create_email_verification_token(user.email)
     # Adjust host/port if deploying elsewhere
-    verify_link = f"http://127.0.0.1:8000/verify-email?token={token}"
+    verify_link = f"{FRONTEND_URL}/?verify_token={token}"
 
     # Send email (log if not configured)
     send_verification_email(user.email, verify_link)
