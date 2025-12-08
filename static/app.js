@@ -1,4 +1,7 @@
 // static/app.js
+// FULL corrected file. Make sure to upload/overwrite and bump ?v= in index.html.
+
+console.log("app.js loaded - starting");
 
 const API_BASE = "https://finlogisticsapp.onrender.com";
 function apiUrl(path) {
@@ -9,12 +12,13 @@ function apiUrl(path) {
   return API_BASE + path;
 }
 
-
 // ========== AUTH & APP SHELL ==========
 
 // Simple helper: API fetch with auth header and redirect on 401/403
-
 async function apiFetch(url, options = {}) {
+  // Debug
+  // console.log("apiFetch called for", url);
+
   const token = localStorage.getItem("access_token");
 
   const headers = options.headers || {};
@@ -23,7 +27,13 @@ async function apiFetch(url, options = {}) {
   }
   options.headers = headers;
 
-  const res = await fetch(url, options);
+  // IMPORTANT: convert relative URL to full API URL
+  const fullUrl = apiUrl(url);
+
+  // Debug log to help troubleshooting
+  // console.log("fetching fullUrl:", fullUrl, "options:", options);
+
+  const res = await fetch(fullUrl, options);
 
   // Auth guard: if unauthorized, force login
   if (res.status === 401 || res.status === 403) {
@@ -140,7 +150,8 @@ async function handleLogin() {
   body.append("username", u);
   body.append("password", p);
 
-  const res = await fetch("/token", {
+  // <-- USE apiFetch so it goes to API_BASE (not hostinger origin)
+  const res = await apiFetch("/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
@@ -217,7 +228,6 @@ async function loadCompaniesAndDashboard() {
 }
 
 // ----- Companies list -----
-
 async function loadCompanies() {
   const listDiv = document.getElementById("company-list");
   const addMsg = document.getElementById("add-msg");
@@ -329,11 +339,7 @@ async function loadCompanies() {
   });
 }
 
-
-// ----- Add company -----
-
-
-// ----- Dashboard table -----
+// ----- Dashboard & helpers (unchanged) -----
 function buildDashboardTable(companies) {
   const table = document.createElement("table");
   table.className = "data-table";
@@ -379,7 +385,6 @@ function buildDashboardTable(companies) {
   });
   table.appendChild(tbody);
 
-  // Row click => detail + analytics
   tbody.querySelectorAll("tr").forEach((row) => {
     row.addEventListener("click", () => {
       const id = row.dataset.id;
@@ -432,8 +437,7 @@ async function loadDashboard() {
     });
 }
 
-
-// Helpers for formatting numbers/percentages
+// helpers
 function formatNumber(x) {
   if (x === null || x === undefined) return "-";
   const n = Number(x);
@@ -449,7 +453,6 @@ function formatNumber(x) {
   }
   return n.toFixed(2);
 }
-
 function formatPercent(x) {
   if (x === null || x === undefined) return "-";
   const n = Number(x);
@@ -457,8 +460,7 @@ function formatPercent(x) {
   return (n * 100).toFixed(1) + "%";
 }
 
-// ========== COMPANY DETAIL & ANALYTICS ==========
-
+// company detail & analytics functions (they use apiFetch already)
 async function loadCompanyDetail(id) {
   const container = document.getElementById("detail-content");
   if (!container) return;
@@ -481,7 +483,7 @@ async function loadCompanyDetail(id) {
 
   const detailDiv = document.createElement("div");
 
-  // Info section
+  // Info
   const infoKeys = Object.keys(info);
   if (infoKeys.length > 0) {
     const infoSection = document.createElement("div");
@@ -493,7 +495,6 @@ async function loadCompanyDetail(id) {
     ul.style.listStyle = "none";
     ul.style.padding = "0";
     infoKeys.slice(0, 10).forEach((key) => {
-     
       const tr = document.createElement("tr");
       const td1 = document.createElement("td");
       const td2 = document.createElement("td");
@@ -501,14 +502,13 @@ async function loadCompanyDetail(id) {
       td2.textContent = `${info[key]}`;
       tr.appendChild(td1);
       tr.appendChild(td2);
-       ul.appendChild(tr);
-      
+      ul.appendChild(tr);
     });
     infoSection.appendChild(ul);
     detailDiv.appendChild(infoSection);
   }
 
-  // Ratios section
+  // Ratios
   const ratiosSection = document.createElement("div");
   const h3r = document.createElement("h3");
   h3r.textContent = "Key Ratios";
@@ -540,21 +540,13 @@ async function loadCompanyDetail(id) {
   ratiosSection.appendChild(rTable);
   detailDiv.appendChild(ratiosSection);
 
-  // Statements
-  if (income) {
-    detailDiv.appendChild(renderStatement("Income Statement (last 3 periods)", income));
-  }
-  if (balance) {
-    detailDiv.appendChild(renderStatement("Balance Sheet (last 3 periods)", balance));
-  }
-  if (cash) {
-    detailDiv.appendChild(renderStatement("Cash Flow (last 3 periods)", cash));
-  }
+  if (income) detailDiv.appendChild(renderStatement("Income Statement (last 3 periods)", income));
+  if (balance) detailDiv.appendChild(renderStatement("Balance Sheet (last 3 periods)", balance));
+  if (cash) detailDiv.appendChild(renderStatement("Cash Flow (last 3 periods)", cash));
 
   container.innerHTML = "";
   container.appendChild(detailDiv);
 
-  // Load company-specific Gemini analytics
   loadCompanyAnalytics(id);
 }
 
@@ -569,9 +561,7 @@ function renderStatement(title, stmt) {
 
   const thead = document.createElement("thead");
   const headRow = document.createElement("tr");
-  headRow.innerHTML = `<th>Item</th>${stmt.columns
-    .map((c) => `<th>${c}</th>`)
-    .join("")}`;
+  headRow.innerHTML = `<th>Item</th>${stmt.columns.map((c) => `<th>${c}</th>`).join("")}`;
   thead.appendChild(headRow);
   table.appendChild(thead);
 
@@ -596,8 +586,7 @@ function renderStatement(title, stmt) {
   return section;
 }
 
-// ========== SECTOR & COMPANY ANALYTICS (GEMINI) ==========
-
+// sector/company analytics
 function setupSectorAnalyticsButton() {
   const btnSector = document.getElementById("btn-refresh-sector-analytics");
   if (!btnSector) return;
@@ -635,3 +624,5 @@ async function loadCompanyAnalytics(id) {
   const data = await res.json().catch(() => ({}));
   container.textContent = data.text || "No analysis generated.";
 }
+
+console.log("app.js finished loading");
