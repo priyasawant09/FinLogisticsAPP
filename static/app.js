@@ -1,6 +1,6 @@
 // static/app.js
 
-const API_BASE = "https://your-render-app.onrender.com";
+const API_BASE = "https://finlogisticsapp.onrender.com";
 function apiUrl(path) {
   // if absolute URL passed, return as-is
   if (/^https?:\/\//i.test(path)) return path;
