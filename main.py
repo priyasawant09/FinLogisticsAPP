@@ -100,12 +100,13 @@ origins = [
     "http://localhost:8000",
     "http://127.0.0.1:8000",
     FRONTEND_URL,
+    "https://olivedrab-raven-901082.hostingersite.com",
     "https://finlogisticsapp.onrender.com",
 ]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_methods=["*"],
+    llow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
     allow_credentials=True,
 )
