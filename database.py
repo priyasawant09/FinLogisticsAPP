@@ -1,47 +1,57 @@
 # database.py
+# Minimal, robust DB setup: supports DATABASE_URL (Postgres) or local SQLite fallback.
 import os
 from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker, scoped_session
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, scoped_session, declarative_base
 from sqlalchemy.pool import NullPool
 
-Base = declarative_base()
+# ------------------ Configuration ------------------
+DATABASE_URL = os.getenv("DATABASE_URL")  # prefer env var (Render Postgres)
+SQLITE_FALLBACK_PATH = os.getenv("SQLITE_PATH", "financial_app.db")
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-# fallback to local sqlite if DATABASE_URL not set
+# ------------------ Engine selection ------------------
 if not DATABASE_URL:
-    sqlite_path = os.getenv("SQLITE_PATH", "financial_app.db")
-    DATABASE_URL = f"sqlite:///{sqlite_path}"
+    # Use file-based SQLite locally
+    url = f"sqlite:///{SQLITE_FALLBACK_PATH}"
     engine = create_engine(
-        DATABASE_URL,
+        url,
         connect_args={"check_same_thread": False},
-        poolclass=NullPool,
+        poolclass=NullPool,  # avoid connection pooling issues with SQLite file
     )
 else:
-    # SQLAlchemy prefers "postgresql://" scheme
+    # Normalize scheme for SQLAlchemy (older libs expect postgresql://)
     if DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
     engine = create_engine(
         DATABASE_URL,
-        pool_pre_ping=True,
+        pool_pre_ping=True,  # helps with dropped connections
         future=True,
     )
 
-# Ensure sqlite foreign keys if using sqlite
-if "sqlite" in DATABASE_URL:
+# ------------------ SQLite PRAGMA ------------------
+# Ensure foreign keys are enabled on SQLite connections
+if "sqlite" in str(engine.url):
     @event.listens_for(engine, "connect")
-    def _set_sqlite_pragma(dbapi_connection, connection_record):
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
+    def _sqlite_enable_foreign_keys(dbapi_conn, conn_record):
+        try:
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+        except Exception:
+            # pragma may fail for non-sqlite DB-API; ignore safely
+            pass
 
+# ------------------ Session / Base ------------------
+# Use scoped_session for thread/process safety in web servers
 SessionLocal = scoped_session(sessionmaker(autocommit=False, autoflush=False, bind=engine))
+Base = declarative_base()
 
+# generator dependency for FastAPI
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+
