@@ -102,6 +102,8 @@ origins = [
     FRONTEND_URL,
     "https://olivedrab-raven-901082.hostingersite.com",
     "https://finlogisticsapp.onrender.com",
+    "https://transporthub.com",
+    "https://www.transporthub.com",
 ]
 app.add_middleware(
     CORSMiddleware,
