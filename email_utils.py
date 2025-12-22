@@ -6,7 +6,7 @@ MJ_API_KEY = os.getenv("MJ_API_KEY")
 MJ_SECRET = os.getenv("MJ_SECRET")
 #MJ_API_KEY ="9f3f97d0c89c88536ab42d207b603fcf"
 #MJ_SECRET = "2ae94cb0f96194911491894fa4513f16"
-MJ_SENDER = os.getenv("MJ_SENDER", "rohit@transporthub.com")
+MJ_SENDER = os.getenv("MJ_SENDER", "Rohit@rccoadvisory.com")
 MJ_SENDER_NAME = os.getenv("MJ_SENDER_NAME", "Logistics FinApp")
 
 if MJ_API_KEY and MJ_SECRET:
