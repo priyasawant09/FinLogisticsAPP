@@ -2,7 +2,6 @@
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, EmailStr
 
-
 # ----- Auth -----
 
 class Token(BaseModel):
@@ -31,7 +30,17 @@ class UserOut(UserBase):
     class Config:
         orm_mode = True
 
+#-----Forgiot Password ----
 
+# ... after Token / UserCreate / UserOut etc.
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
 # ----- Companies -----
 
 class CompanyBase(BaseModel):
