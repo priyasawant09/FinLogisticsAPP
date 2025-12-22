@@ -26,6 +26,8 @@ from auth import (
     get_user_by_email,
     create_email_verification_token,
     decode_email_verification_token,
+    create_password_reset_token,      # <-- ADD
+    decode_password_reset_token,      # <-- ADD
 )
 from email_utils import send_verification_email
 from database import Base, engine
@@ -46,6 +48,8 @@ from schemas import (
     CompanyMetrics,
     CompanyDetailResponse,
     StatementResponse,
+    ForgotPasswordRequest,            # <-- ADD
+    ResetPasswordRequest,             # <-- ADD
 )
 
 # ================== GEMINI CONFIG ==================
@@ -487,4 +491,48 @@ def company_detail(
         balance_sheet=to_statement(balance_json),
         cash_flow=to_statement(cf_json),
     )
+
+# ------Forgot Password and Reset Password Endpoints------
+@app.post("/forgot-password")
+def forgot_password(
+    req: ForgotPasswordRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Generate password reset link and send to registered email.
+    Always return a generic success message to avoid email enumeration.
+    """
+    user = get_user_by_email(db, req.email)
+
+    if user:
+        token = create_password_reset_token(user.email)
+        reset_link = f"{FRONTEND_URL}/?reset_token={token}"
+        from email_utils import send_password_reset_email
+        send_password_reset_email(user.email, reset_link)
+
+    # Even if user not found, return same message
+    return {
+        "message": "If an account with that email exists, a reset link has been sent."
+    }
+
+@app.post("/reset-password")
+def reset_password(
+    req: ResetPasswordRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Reset password using a valid reset token and new password.
+    """
+    email = decode_password_reset_token(req.token)
+    if not email:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+
+    user = get_user_by_email(db, email)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.hashed_password = get_password_hash(req.new_password)
+    db.commit()
+
+    return {"message": "Password reset successful. You can now log in with the new password."}
 # ================== END OF FILE ==================

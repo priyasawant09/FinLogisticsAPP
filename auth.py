@@ -22,7 +22,8 @@ EMAIL_TOKEN_EXPIRE_MINUTES = 30  # verification link validity
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
-
+# add near ACCESS_TOKEN_EXPIRE_MINUTES
+PASSWORD_RESET_EXPIRE_MINUTES = 30  # reset link validity
 
 # ----- DB dependency -----
 
@@ -93,6 +94,26 @@ def decode_email_verification_token(token: str) -> Optional[str]:
     except JWTError:
         return None
 
+#password reset ( forgot password )helpers
+def create_password_reset_token(email: str) -> str:
+    """Token used in password reset link."""
+    to_encode = {
+        "sub": email,
+        "type": "reset_password",
+        "exp": datetime.utcnow() + timedelta(minutes=PASSWORD_RESET_EXPIRE_MINUTES),
+    }
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def decode_password_reset_token(token: str) -> Optional[str]:
+    """Return email if token is valid reset token, else None."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") != "reset_password":
+            return None
+        return payload.get("sub")
+    except JWTError:
+        return None
 
 # ----- Current user dependencies -----
 
