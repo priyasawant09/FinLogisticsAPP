@@ -29,7 +29,10 @@ from auth import (
     create_password_reset_token,      # <-- ADD
     decode_password_reset_token,      # <-- ADD
 )
-from email_utils import send_verification_email
+from email_utils import (
+    send_verification_email,
+    send_password_reset_email,
+)
 from database import Base, engine
 from finance import (
     fetch_price_history,
@@ -48,8 +51,8 @@ from schemas import (
     CompanyMetrics,
     CompanyDetailResponse,
     StatementResponse,
-    ForgotPasswordRequest,            # <-- ADD
-    ResetPasswordRequest,             # <-- ADD
+    ForgotPasswordRequest,
+    ResetPasswordRequest,
 )
 
 # ================== GEMINI CONFIG ==================
@@ -99,12 +102,11 @@ app = FastAPI(
 # Serve static front-end
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-FRONTEND_URL = os.getenv("FRONTEND_URL", "https://olivedrab-raven-901082.hostingersite.com")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://transporthub.com")
 origins = [
     "http://localhost:8000",
     "http://127.0.0.1:8000",
     FRONTEND_URL,
-    "https://olivedrab-raven-901082.hostingersite.com",
     "https://finlogisticsapp.onrender.com",
     "https://transporthub.com",
     "https://www.transporthub.com",
@@ -507,7 +509,6 @@ def forgot_password(
     if user:
         token = create_password_reset_token(user.email)
         reset_link = f"{FRONTEND_URL}/?reset_token={token}"
-        from email_utils import send_password_reset_email
         send_password_reset_email(user.email, reset_link)
 
     # Even if user not found, return same message
